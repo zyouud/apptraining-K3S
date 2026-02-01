@@ -1,0 +1,17 @@
+# kube / cluster access
+kubeconfig*.yaml
+*.kubeconfig
+.kube/
+
+# secrets / keys
+*.key
+*.pem
+*.pfx
+*.p12
+*secret*
+secrets/
+.env
+.env.*
+
+# editor / os
+.DS_Store
