@@ -117,7 +117,7 @@ jobs:
       - name: Apply Kubernetes manifests (kustomize staging)
         shell: bash
         run: |
-          kubectl apply -k manifests/staging
+          kubectl apply -k manifests/dev
 
       - name: Update images on Deployments (immutable tags)
         shell: bash
