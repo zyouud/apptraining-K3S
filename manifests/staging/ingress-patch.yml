@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zyoud-app-ingress
+  namespace: zyoud
+spec:
+  tls:
+    - hosts:
+        - devops-3.sociumtech.com
+      secretName: zyoud-devops-3-tls
+  rules:
+    - host: devops-3.sociumtech.com
