@@ -89,7 +89,7 @@ jobs:
           kubectl config use-context zyoud
 
           # Connectivity checks (non-interactive)
-          kubectl version --short
+          kubectl version
           kubectl get ns
           kubectl -n "${NAMESPACE}" get pods
         env:
