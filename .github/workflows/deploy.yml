@@ -71,12 +71,13 @@ jobs:
           mkdir -p ~/.kube
 
           # Create kubeconfig via kubectl commands (avoids YAML indentation issues)
-          kubectl config set-cluster k3s \
-            --server="${K3S_SERVER}" \
-            --certificate-authority=/tmp/ca.crt \
-            --embed-certs=true
-
           echo "${K3S_CA_CRT}" | base64 -d > /tmp/ca.crt
+
+          kubectl config set-cluster k3s \
+          --server="${K3S_SERVER}" \
+          --certificate-authority=/tmp/ca.crt \
+          --embed-certs=true
+
 
           kubectl config set-credentials zyoud-gha --token="${K3S_TOKEN}"
 
