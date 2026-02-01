@@ -2,7 +2,7 @@ name: deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       run_mode:
@@ -56,11 +56,13 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build & push backend
+        shell: bash
         run: |
           docker build -t "$BACKEND_IMAGE:${TAG}" ./backend
           docker push "$BACKEND_IMAGE:${TAG}"
 
       - name: Build & push frontend
+        shell: bash
         run: |
           docker build -t "$FRONTEND_IMAGE:${TAG}" ./frontend
           docker push "$FRONTEND_IMAGE:${TAG}"
@@ -96,9 +98,10 @@ jobs:
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
         with:
-          version: 'v1.29.0'
+          version: "v1.29.0"
 
       - name: Debug K3S_SERVER (must not be 127.0.0.1)
+        shell: bash
         run: |
           echo "K3S_SERVER=${K3S_SERVER}"
           if echo "${K3S_SERVER}" | grep -q "127.0.0.1"; then
@@ -108,52 +111,31 @@ jobs:
         env:
           K3S_SERVER: ${{ secrets.K3S_SERVER }}
 
-      - name: Configure kubeconfig (k3s) - robust (NO SSH)
+      - name: Configure kubeconfig from Secret (plain text)
         shell: bash
         run: |
           set -euo pipefail
-
-          : "${K3S_SERVER:?K3S_SERVER is empty}"
-          : "${K3S_TOKEN:?K3S_TOKEN is empty}"
-          : "${K3S_CA_CRT:?K3S_CA_CRT is empty}"
-
           mkdir -p ~/.kube
+          printf "%s" "${KUBECONFIG_YAML}" > ~/.kube/config
 
-          echo "${K3S_CA_CRT}" | base64 -d > /tmp/ca.crt
-
-          kubectl config set-cluster k3s \
-            --server="${K3S_SERVER}" \
-            --certificate-authority=/tmp/ca.crt \
-            --embed-certs=true
-
-          kubectl config set-credentials zyoud-gha \
-            --token="${K3S_TOKEN}"
-
-          kubectl config set-context zyoud \
-            --cluster=k3s \
-            --user=zyoud-gha \
-            --namespace="${NAMESPACE}"
-
-          kubectl config use-context zyoud
-
-          kubectl version
           kubectl -n "${NAMESPACE}" get pods
           kubectl -n "${NAMESPACE}" get deploy
         env:
-          K3S_SERVER: ${{ secrets.K3S_SERVER }}
-          K3S_TOKEN: ${{ secrets.K3S_TOKEN }}
-          K3S_CA_CRT: ${{ secrets.K3S_CA_CRT }}
+          KUBECONFIG_YAML: ${{ secrets.KUBECONFIG_YAML }}
 
       - name: Apply Kubernetes manifests (kustomize staging)
+        shell: bash
         run: |
           kubectl apply -k manifests/staging
 
       - name: Update images on Deployments (immutable tags)
+        shell: bash
         run: |
-          kubectl -n ${NAMESPACE} set image deployment/zyoud-backend backend=${BACKEND_IMAGE}:${TAG}
-          kubectl -n ${NAMESPACE} set image deployment/zyoud-frontend frontend=${FRONTEND_IMAGE}:${TAG}
+          kubectl -n "${NAMESPACE}" set image deployment/zyoud-backend backend="${BACKEND_IMAGE}:${TAG}"
+          kubectl -n "${NAMESPACE}" set image deployment/zyoud-frontend frontend="${FRONTEND_IMAGE}:${TAG}"
 
       - name: Rollout status
+        shell: bash
         run: |
-          kubectl -n ${NAMESPACE} rollout status deploy/zyoud-backend --timeout=180s
-          kubectl -n ${NAMESPACE} rollout status deploy/zyoud-frontend --timeout=300s
+          kubectl -n "${NAMESPACE}" rollout status deploy/zyoud-backend --timeout=180s
+          kubectl -n "${NAMESPACE}" rollout status deploy/zyoud-frontend --timeout=300s
