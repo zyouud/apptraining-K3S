@@ -1,103 +1,35 @@
-name: deploy
+name: deploy-dev
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
     inputs:
-      run_mode:
-        description: "What to run"
+      tag:
+        description: "Image tag (git SHA)"
         required: true
-        default: "build-and-deploy"
-        type: choice
-        options:
-          - build-and-deploy
-          - build-only
-          - deploy-only
 
 permissions:
   contents: read
-  packages: write
 
 env:
   NAMESPACE: zyoud
-  FRONTEND_IMAGE: ghcr.io/zyouud/apptraining-frontend
   BACKEND_IMAGE: ghcr.io/zyouud/apptraining-backend
+  FRONTEND_IMAGE: ghcr.io/zyouud/apptraining-frontend
 
 jobs:
-  build:
-    name: Build & Push Images
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'push' ||
-      github.event.inputs.run_mode == 'build-and-deploy' ||
-      github.event.inputs.run_mode == 'build-only'
-
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set image tag (immutable)
-        id: tag
-        shell: bash
-        run: |
-          TAG="${GITHUB_SHA::7}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Build & push backend
-        shell: bash
-        run: |
-          docker build -t "$BACKEND_IMAGE:${TAG}" ./backend
-          docker push "$BACKEND_IMAGE:${TAG}"
-
-      - name: Build & push frontend
-        shell: bash
-        run: |
-          docker build -t "$FRONTEND_IMAGE:${TAG}" ./frontend
-          docker push "$FRONTEND_IMAGE:${TAG}"
-
   deploy:
-    name: Deploy to K3s (Kustomize dev)
     runs-on: ubuntu-latest
-    needs: [build]
-    if: |
-      github.event_name == 'push' ||
-      github.event.inputs.run_mode == 'build-and-deploy' ||
-      github.event.inputs.run_mode == 'deploy-only'
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set deploy tag
-        shell: bash
-        run: |
-          if [ -n "${{ needs.build.outputs.tag }}" ]; then
-            echo "TAG=${{ needs.build.outputs.tag }}" >> "$GITHUB_ENV"
-          else
-            echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          fi
+      - uses: actions/checkout@v4
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
         with:
           version: "v1.29.0"
 
-      - name: Configure kubeconfig from Secret (plain text)
+      - name: Configure kubeconfig
         shell: bash
         run: |
-          set -euo pipefail
           mkdir -p ~/.kube
           printf "%s\n" "${KUBECONFIG_YAML}" > ~/.kube/config
         env:
@@ -106,25 +38,21 @@ jobs:
       - name: Install kustomize
         shell: bash
         run: |
-          set -euo pipefail
           curl -sSfL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
           sudo mv kustomize /usr/local/bin/kustomize
 
-      - name: Set images in dev overlay (SHA tag)
+      - name: Set image tags
         shell: bash
         run: |
-          set -euo pipefail
           cd manifests/dev
-          kustomize edit set image ghcr.io/zyouud/apptraining-backend=${BACKEND_IMAGE}:${TAG}
-          kustomize edit set image ghcr.io/zyouud/apptraining-frontend=${FRONTEND_IMAGE}:${TAG}
+          kustomize edit set image \
+            ghcr.io/zyouud/apptraining-backend=${BACKEND_IMAGE}:${{ inputs.tag }} \
+            ghcr.io/zyouud/apptraining-frontend=${FRONTEND_IMAGE}:${{ inputs.tag }}
 
-      - name: Apply Kubernetes manifests (kustomize dev)
-        shell: bash
-        run: |
-          kubectl apply -k manifests/dev
+      - name: Deploy
+        run: kubectl apply -k manifests/dev
 
       - name: Rollout status
-        shell: bash
         run: |
-          kubectl -n "${NAMESPACE}" rollout status deploy/zyoud-backend --timeout=180s
-          kubectl -n "${NAMESPACE}" rollout status deploy/zyoud-frontend --timeout=300s
+          kubectl -n ${NAMESPACE} rollout status deploy/zyoud-backend --timeout=180s
+          kubectl -n ${NAMESPACE} rollout status deploy/zyoud-frontend --timeout=180s
